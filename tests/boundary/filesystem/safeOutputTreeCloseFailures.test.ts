@@ -18,7 +18,7 @@ const injectedFilesystemFailures = vi.hoisted(() => ({
     | ((handle: FileHandle, close: () => Promise<void>) => void)
     | undefined,
   blockCloseRetries: false,
-  chmodNext: false,
+  setupFailureNext: false,
   parentSync: undefined as
     | { path: string; controller: AbortController; handle?: FileHandle }
     | undefined,
@@ -38,10 +38,11 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     },
     open: async (...args: Parameters<typeof filesystem.open>) => {
       const handle = await filesystem.open(...args);
-      if (injectedFilesystemFailures.chmodNext) {
-        injectedFilesystemFailures.chmodNext = false;
-        handle.chmod = async () => {
-          throw new Error("primary setup chmod failure");
+      if (injectedFilesystemFailures.setupFailureNext) {
+        injectedFilesystemFailures.setupFailureNext = false;
+        // The staging root's first handle check runs after its identity is recorded.
+        handle.stat = async () => {
+          throw new Error("primary setup failure");
         };
       }
       if (injectedFilesystemFailures.closeNext) {
@@ -163,14 +164,14 @@ describe("safe artifact output close failures", () => {
         "rea-safe-output-setup-close-",
       );
       const output = join(parent, "published");
-      injectedFilesystemFailures.chmodNext = true;
+      injectedFilesystemFailures.setupFailureNext = true;
       injectedFilesystemFailures.closeNext = true;
       const failure = await SafeOutputTree.create(output).catch(
         (cause: unknown) => cause,
       );
       expect(failure).toMatchObject({
         name: "SafeOutputTreeCreationFailure",
-        message: "primary setup chmod failure",
+        message: "primary setup failure",
         cleanup: { reason: "injected close failure", resources: [output] },
       });
       if (!(failure instanceof SafeOutputTreeCreationFailure))

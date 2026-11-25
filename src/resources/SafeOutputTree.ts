@@ -572,12 +572,16 @@ export class SafeOutputTree {
         } = { kind: "ready" };
     try {
       await assertHandleIdentity(stagingHandle.handle, identity, path);
-      await stagingHandle.handle.chmod(0o700);
-      if (((await stagingHandle.handle.stat()).mode & 0o777) !== 0o700)
-        throw new ArtifactReaderFailure(
-          "path",
-          "Could not establish owner access to output directory",
-        );
+      // Change the mode only when the umask or an inherited bit altered it:
+      // macOS virtiofs shares give a directory a new inode after chmod.
+      if (((await stagingHandle.handle.stat()).mode & 0o7777) !== 0o700) {
+        await stagingHandle.handle.chmod(0o700);
+        if (((await stagingHandle.handle.stat()).mode & 0o777) !== 0o700)
+          throw new ArtifactReaderFailure(
+            "path",
+            "Could not establish owner access to output directory",
+          );
+      }
     } catch (cause: unknown) {
       setup = { kind: "failed", cause };
     }

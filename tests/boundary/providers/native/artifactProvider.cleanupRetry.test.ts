@@ -174,7 +174,7 @@ it("retains a tree whose setup failed after root identity was captured", async (
   const prototypeHandle = await open(join(root, "prototype-handle"), "w");
   const handlePrototype = Object.getPrototypeOf(prototypeHandle) as Pick<
     typeof prototypeHandle,
-    "chmod"
+    "stat"
   >;
   await prototypeHandle.close();
   await rm(join(root, "prototype-handle"));
@@ -183,12 +183,19 @@ it("retains a tree whose setup failed after root identity was captured", async (
     await rm(blocker, { force: true });
     await client.close();
   });
-  vi.spyOn(handlePrototype, "chmod").mockImplementationOnce(async function (
+  const originalStat = handlePrototype.stat;
+  let injected = false;
+  // The output root's first directory handle check runs after its identity is recorded.
+  vi.spyOn(handlePrototype, "stat").mockImplementation(async function (
     this: typeof prototypeHandle,
+    ...args: Parameters<typeof prototypeHandle.stat>
   ) {
+    const metadata = await originalStat.apply(this, args);
+    if (injected || !metadata.isDirectory()) return metadata;
+    injected = true;
     await writeFile(blocker, "keep until owner retry");
     throw new Error("injected output setup failure");
-  });
+  } as typeof prototypeHandle.stat);
 
   const extraction = await client.execute("extract_artifact", {
     output_root: output,

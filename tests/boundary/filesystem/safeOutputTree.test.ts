@@ -124,12 +124,13 @@ describe("safe artifact output setup ownership", () => {
       const prototypeHandle = await open(join(parent, "handle"), "w");
       const handlePrototype = Object.getPrototypeOf(prototypeHandle) as Pick<
         typeof prototypeHandle,
-        "chmod"
+        "stat"
       >;
       await prototypeHandle.close();
       await rm(join(parent, "handle"));
-      const chmodSpy = vi
-        .spyOn(handlePrototype, "chmod")
+      // The root's first handle check runs after its identity is recorded.
+      const statSpy = vi
+        .spyOn(handlePrototype, "stat")
         .mockImplementationOnce(async function (this: typeof prototypeHandle) {
           await writeFile(blocker, "leave until cleanup retry");
           throw new Error("injected setup failure");
@@ -138,7 +139,7 @@ describe("safe artifact output setup ownership", () => {
       const failure = await SafeOutputTree.create(output).catch(
         (cause: unknown) => cause,
       );
-      chmodSpy.mockRestore();
+      statSpy.mockRestore();
       expect(failure).toBeInstanceOf(SafeOutputTreeCreationFailure);
       if (!(failure instanceof SafeOutputTreeCreationFailure))
         throw new Error("expected setup failure to retain its tree owner");
